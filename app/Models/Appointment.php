@@ -15,4 +15,23 @@ class Appointment extends Model
         'status',
         'delay_minutes'
     ];
+    public function client()
+    {
+        return $this->belongsTo(User::class, 'client_id');
+    }
+
+    public function specialist()
+    {
+        return $this->belongsto(Specialist::class);
+    }
+
+    public function service()
+    {
+        return $this->belongsto(Service::class);
+    }
+
+    public function services()
+    {
+        return $this->belongsToMany(Service::class, 'appointment_services');
+    }
 }

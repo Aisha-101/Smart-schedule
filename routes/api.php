@@ -18,6 +18,8 @@ Route::put('/services/{id}',[ServiceController::class,'update']);
 
 Route::get('/appointments',[AppointmentController::class,'index']);
 Route::post('/appointments',[AppointmentController::class,'store']);
+Route::put('/appointments/{id}',[AppointmentController::class,'update']);
+Route::delete('/appointments/{id}',[AppointmentController::class,'delete']);
 
 Route::get('/specialists/{id}/schedule',[SpecialistAvailabilityController::class,'index']);
 Route::post('/specialists/{id}/schedule',[SpecialistAvailabilityController::class,'store']);

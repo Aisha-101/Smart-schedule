@@ -19,7 +19,7 @@
 /storage/*.key
 /storage/pail
 /vendor
-Homestead.json
+Homestead.jsongit remote 
 Homestead.yaml
 Thumbs.db
 /storage
