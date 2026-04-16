@@ -22,12 +22,12 @@ class Appointment extends Model
 
     public function specialist()
     {
-        return $this->belongsto(Specialist::class);
+        return $this->belongsTo(Specialist::class);
     }
 
     public function service()
     {
-        return $this->belongsto(Service::class);
+        return $this->belongsTo(Service::class);
     }
 
     public function services()
