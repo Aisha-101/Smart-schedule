@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -15,7 +17,7 @@ class AuthController extends Controller
         $request->validate([
             'name'=>'required|string',
             'email'=>'required|email|unique:users',
-            'password'=>'required|min:6|confirmed'
+            'password'=>'required|min:8|confirmed'
         ]);
         $user = User::create([
             'name'=>$request->name,
@@ -23,7 +25,12 @@ class AuthController extends Controller
             'password'=>Hash::make($request->password),
             'role'=>'CLIENT'
         ]);
-        return response()->json($user);
+
+        $user->sendEmailVerificationNotification();
+
+        return response()->json([
+            'message'=>'Registration successful. Please check your email to verify your account.'
+        ]);
     }
     public function login(Request $request)
     {
@@ -31,6 +38,10 @@ class AuthController extends Controller
 
        if(!$token = auth('api')->attempt($credentials)){
            return response()->json(['error'=>'Invalid credentials'], 401);
+       }
+
+       if(!auth('api')->user()->hasVerifiedEmail()){
+           return response()->json(['error'=>'Please verify your email address'], 403);
        }
 
        return response()->json([
@@ -43,6 +54,8 @@ class AuthController extends Controller
         $request->validate([
             'email'=>'required|email|exists:users,email'
         ]);
+
+        Password::sendResetLink($request->only('email'));
 
         return response()->json([
             'message'=>'Password reset link sent to your email'
@@ -58,8 +71,30 @@ class AuthController extends Controller
             'password_confirmation'=>'required'
         ]);
 
+        $status = Password::reset(
+            $request->only(
+                'email',
+                'password',
+                'password_confirmation',
+                'token'
+            ),
+
+            function($user, $password){
+                $user->password = Hash::make($password);
+                $user->setRememberToken(Str::random(60));
+                $user->save();
+            }
+        );
+         if($status === Password::PASSWORD_RESET){
+            return response()->json(['message'=>'Password reset successfully'], 200);
+        }
+    
+        
+        $user = User::where('email', $request->email)->first();
+        auth('api')->login($user);
+        
         return response()->json([
-            'message'=>'Password reset successfully'
-        ]);
+            'message'=> _($status)], 400);
+        
     }
 }

@@ -8,12 +8,48 @@ use App\Http\Controllers\SpecialistController;
 use App\Http\Controllers\RecommendationController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
 
 // PUBLIC
 Route::post('/register',[AuthController::class,'register']);
+Route::get('/email/verify/{id}/{hash}', function ($id, $hash) {
+    
+    $user = \App\Models\User::findOrFail($id);
+
+    if(!hash_equals((string) $hash, sha1($user->getEmailForVerification()))) {
+        return response()->json(['message' => 'Invalid verification link'], 400);
+    }
+
+    if (!$user->hasVerifiedEmail()) {
+        $user->markEmailAsVerified();
+    }
+
+    return response()->json(['message' => 'Email verified']);
+});
+Route::post('/email/resend', function (Request $request) {
+    $user = \App\Models\User::where('email', $request->email)->first();
+
+    if(!$user) {
+        return response()->json(['message' => 'User not found'], 404);
+    }
+
+    if ($user->hasVerifiedEmail()) {
+        return response()->json(['message' => 'Email already verified'], 400);
+    }
+
+    $user->sendEmailVerificationNotification();
+
+    return response()->json(['message' => 'Verification email resent']);
+});
+
 Route::post('/login',[AuthController::class,'login']);
 
 Route::post('/forgot-password',[AuthController::class,'forgotPassword']);
+Route::get('/reset-password/{token}', function ($token) {
+    return response()->json([
+        'token' => $token
+    ]);
+})->name('password.reset');
 Route::post('/reset-password',[AuthController::class,'resetPassword']);
 
 Route::get('/services',[ServiceController::class,'index']);
