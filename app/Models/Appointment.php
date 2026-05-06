@@ -9,7 +9,6 @@ class Appointment extends Model
     protected $fillable = [
         'client_id',
         'specialist_id',
-        'service_id',
         'start_time',
         'end_time',
         'status',
@@ -22,13 +21,9 @@ class Appointment extends Model
 
     public function specialist()
     {
-        return $this->belongsTo(Specialist::class);
+        return $this->belongsTo(User::class, 'specialist_id');
     }
 
-    public function service()
-    {
-        return $this->belongsTo(Service::class);
-    }
 
     public function services()
     {

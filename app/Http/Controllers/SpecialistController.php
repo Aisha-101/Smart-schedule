@@ -10,8 +10,9 @@ class SpecialistController extends Controller
 {
     public function index()
     {
-        $specialists = Specialist::with('user')->get();
-        return response()->json($specialists);
+        return User::where('role', 'SPECIALIST')
+            ->select('id', 'name', 'email', 'role')
+            ->get();
     }
     public function store(Request $request)
     {

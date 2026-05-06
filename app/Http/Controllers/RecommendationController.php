@@ -9,10 +9,17 @@ class RecommendationController extends Controller
 {
     public function get(Request $request, RecommendationService $service)
     {
+        $request->validate([
+            'specialist_id' => 'required|integer',
+            'date' => 'required|date',
+            'service_id' => 'required|exists:services,id'
+        ]);
+
         $data = $service->getRecommendedTimes(
             auth()->id(),
             $request->specialist_id,
-            $request->date
+            $request->date,
+            $request->service_id
         );
 
         return response()->json($data);

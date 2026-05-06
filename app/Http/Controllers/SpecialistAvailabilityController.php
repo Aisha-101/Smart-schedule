@@ -12,6 +12,7 @@ class SpecialistAvailabilityController extends Controller
     }
     public function store(Request $request, $id)
     {
+
         $request->validate([
             'date'=>'required|date',
             'start_time'=>'required|date_format:H:i',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 use App\Models\Appointment;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class AppointmentController extends Controller
 {
@@ -23,14 +24,10 @@ class AppointmentController extends Controller
         $clientId = auth()->id();
 
        $overlap = Appointment::where('specialist_id', $request->specialist_id)
-            ->where('status', '!=', 'canceled')
+            ->where('status', '!=', 'CANCELED')
             ->where(function ($query) use ($request){
-                $query->whereBetween('start_time',[$request->start_time,$request->end_time])
-                    ->orWhereBetween('end_time',[$request->start_time,$request->end_time])
-                    ->orWhere(function ($q) use ($request){
-                        $q->where('start_time', '<=',$request->start_time)
-                            ->where('end_time', '>=',$request->end_time);
-                    });
+                $query->where('start_time', '<', $request->end_time)
+                    ->where('end_time', '>', $request->start_time);
             })
             ->exists();
 
@@ -41,7 +38,7 @@ class AppointmentController extends Controller
         }
 
         $appointment = Appointment::create([
-            'client_id' => $client_id,
+            'client_id' => $clientId,
             'specialist_id' => $request->specialist_id,
             'start_time' => $request->start_time,
             'end_time' => $request->end_time,
@@ -56,17 +53,75 @@ class AppointmentController extends Controller
     {
         $appointment = Appointment::findOrFail($id);
 
-        $appointment->update($request->only([
-            'start_time',
-            'end_time',
-            'status'
-        ]));
+        $request->validate([
+            'start_time' => 'sometimes|required|date',
+            'end_time' => 'sometimes|required|date|after:start_time',
+            'status' => 'sometimes|required|in:SCHEDULED,COMPLETED,CANCELED,NO_SHOW,LATE',
+            'services' => 'sometimes|array',
+            'services.*' => 'exists:services,id'
+        ]);
 
-        if($request->has('services')){
+        if ($request->has('start_time') && $request->has('end_time')) {
+
+        $specialistOverlap = Appointment::where('specialist_id', $appointment->specialist_id)
+            ->where('id', '!=', $appointment->id)
+            ->where('status', '!=', 'CANCELED')
+            ->where(function ($query) use ($request) {
+                $query->where('start_time', '<', $request->end_time)
+                    ->where('end_time', '>', $request->start_time);
+            })
+            ->exists();
+
+        if ($specialistOverlap) {
+            return response()->json([
+                'message' => 'This time slot is already taken by the specialist'
+            ], 400);
+        }
+
+        $clientOverlap = Appointment::where('client_id', $appointment->client_id)
+            ->where('id', '!=', $appointment->id)
+            ->where('status', '!=', 'CANCELED')
+            ->where(function ($query) use ($request) {
+                $query->where('start_time', '<', $request->end_time)
+                    ->where('end_time', '>', $request->start_time);
+            })
+            ->exists();
+
+        if ($clientOverlap) {
+            return response()->json([
+                'message' => 'Client already has another appointment at this time'
+            ], 400);
+        }
+
+        $appointment->update([
+            'start_time' => $request->start_time,
+            'end_time' => $request->end_time,
+        ]);
+
+        if ($request->has('status')) {
+            $appointment->update([
+                'status' => $request->status,
+            ]);
+        }
+
+        if ($request->has('services')) {
             $appointment->services()->sync($request->services);
         }
 
-        return $appointment->load('services');
+        return $appointment->load(['services','client','specialist']);
+    }
+
+    if ($request->has('status')) {
+        $appointment->update([
+            'status' => $request->status,
+        ]);
+    }
+
+    if ($request->has('services')) {
+        $appointment->services()->sync($request->services);
+    }
+
+
     }
 
     //Cancel Appointment
@@ -102,5 +157,34 @@ class AppointmentController extends Controller
         }
 
         return response()->json([]);
+    }
+
+    public function updateStatus(Request $request, $id)
+    {
+        $request->validate([
+            'status' => 'required|in:SCHEDULED,COMPLETED,CANCELED,NO_SHOW,LATE',
+            'delay_minutes' => 'nullable|integer|min:0',
+        ]);
+
+        $appointment = Appointment::findOrFail($id);
+
+        $delayMinutes = 0;
+        if ($request->status === 'LATE') {
+            $startTime = Carbon::parse($appointment->start_time);
+            $now = Carbon::now();
+
+            $delayMinutes = $now->greaterThan($startTime)
+                 ? $startTime->diffInMinutes($now) 
+                 : 0;
+        }
+        $appointment->update([
+            'status' => $request->status,
+            'delay_minutes' => $delayMinutes,
+        ]);
+
+        return response()->json([
+            'message' => 'Appointment status updated successfully',
+            'appointment' => $appointment->load(['client', 'services'])
+        ]);
     }
 }

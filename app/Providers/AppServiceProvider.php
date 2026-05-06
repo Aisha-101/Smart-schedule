@@ -22,11 +22,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         ResetPassword::createUrlUsing(function ($user, string $token) {
-            return "http://localhost:5175/reset-password?token=$token&email=" . urlencode($user->email);
+            return "http://localhost:5173/reset-password?token=$token&email=" . urlencode($user->email);
         });
 
         VerifyEmail::createUrlUsing(function ($notifiable) {
-            return "http://localhost:5175/verify-email?id=" 
+            return "http://localhost:5173/verify-email?id=" 
                  . $notifiable->id 
                  . "&hash=" 
                  . sha1($notifiable->getEmailForVerification());

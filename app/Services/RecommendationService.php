@@ -5,21 +5,23 @@ namespace App\Services;
 use App\Models\Appointment;
 use App\Models\SpecialistAvailability;
 use Carbon\Carbon;
+use App\Models\Service;
+use App\Models\Specialist;
 
 class RecommendationService
 {
     /**
      * Main recommendation algorithm
      */
-    public function getRecommendedTimes(
-        $clientId,
-        $specialistId,
-        $date
-    )
+    public function getRecommendedTimes($clientId, $specialistId, $date, $serviceId)
     {
+        $service = Service::find($serviceId);
+        $duration = $service->duration;
+
         $slots = $this->availableSlots(
             $specialistId,
-            $date
+            $date,
+            $duration
         );
 
         $results = [];
@@ -57,10 +59,7 @@ class RecommendationService
             ];
         }
 
-        usort(
-            $results,
-            fn($a,$b)=> $b['score'] <=> $a['score']
-        );
+        usort($results, fn($a,$b)=> $b['score'] <=> $a['score']);
 
         return $results;
     }
@@ -69,68 +68,36 @@ class RecommendationService
     /**
      * Generate only FREE specialist slots
      */
-    private function availableSlots(
-        $specialistId,
-        $date
-    )
+    private function availableSlots($specialistId, $date, $duration)
     {
         $availability=
-            SpecialistAvailability::where(
-                'specialist_id',
-                $specialistId
-            )
-            ->whereDate(
-                'date',
-                $date
-            )
+            SpecialistAvailability::where('specialist_id', $specialistId)
+            ->whereDate('date', $date)
             ->get();
 
         $slots=[];
 
         foreach($availability as $window){
 
-            $start=
-                Carbon::parse(
+            $start = Carbon::parse(
                     $date.' '.$window->start_time
                 );
 
-            $end=
-                Carbon::parse(
+            $end = Carbon::parse(
                     $date.' '.$window->end_time
                 );
 
 
-            // 30-minute slots
-            while(
-                $start->copy()->addMinutes(30)
-                    <=
-                $end
-            ){
+            while ($start->copy()->addMinutes($duration) <= $end) {
 
-                $slotStart=
-                    $start->copy();
+                $slotStart = $start->copy();
 
-                $slotEnd=
-                    $start->copy()
-                        ->addMinutes(30);
+                $slotEnd = $start->copy()->addMinutes($duration);
 
-                // only add if no conflict
-                if(
-                    !$this->hasConflict(
-                        $specialistId,
-                        $slotStart,
-                        $slotEnd
-                    )
-                ){
-
-                    $slots[]=[
-                        'start'=>
-                            $slotStart
-                                ->toDateTimeString(),
-
-                        'end'=>
-                            $slotEnd
-                                ->toDateTimeString()
+                if (!$this->hasConflict($specialistId, $slotStart, $slotEnd)) {
+                    $slots[] = [
+                        'start' => $slotStart->toDateTimeString(),
+                        'end' => $slotEnd->toDateTimeString()
                     ];
                 }
 
@@ -145,49 +112,15 @@ class RecommendationService
     /**
      * Prevent appointment conflicts
      */
-    private function hasConflict(
-        $specialistId,
-        $start,
-        $end
-    )
+    private function hasConflict($specialistId, $start, $end)
     {
-        return Appointment::where(
-            'specialist_id',
-            $specialistId
-        )
-
-        ->where(function($query)
-            use($start,$end){
-
-            $query->whereBetween(
-                'start_time',
-                [$start,$end]
-            )
-
-            ->orWhereBetween(
-                'end_time',
-                [$start,$end]
-            )
-
-            ->orWhere(function($q)
-                use($start,$end){
-
-                $q->where(
-                    'start_time',
-                    '<=',
-                    $start
-                )
-                ->where(
-                    'end_time',
-                    '>=',
-                    $end
-                );
-
-            });
-
-        })
-
-        ->exists();
+        return Appointment::where('specialist_id', $specialistId)
+            ->where('status', '!=', 'CANCELED')
+            ->where(function ($query) use ($start, $end) {
+                $query->where('start_time', '<', $end)
+                    ->where('end_time', '>', $start);
+            })
+            ->exists();
     }
 
 
@@ -195,34 +128,20 @@ class RecommendationService
     /**
      * Client reliability
      */
-    private function clientReliability(
-        $clientId
-    )
+    private function clientReliability($clientId)
     {
-        $appointments=
-            Appointment::where(
-                'client_id',
-                $clientId
-            )->get();
+        $appointments = Appointment::where('client_id', $clientId)
+                    ->get();
 
-        if(
-            $appointments->count()==0
-        ){
+        if($appointments->count() == 0){
             return 0.70;
         }
 
-        $noShows=
-            $appointments
-                ->where(
-                    'status',
-                    'no-show'
-                )
+        $noShows = $appointments
+                ->where('status', 'NO_SHOW')
                 ->count();
 
-        return
-            1 -
-            ($noShows /
-            $appointments->count());
+        return 1 - ($noShows / $appointments->count());
     }
 
 
@@ -230,25 +149,16 @@ class RecommendationService
     /**
      * Time preference score
      */
-    private function timeReliability(
-        $slot
-    )
+    private function timeReliability($slot)
     {
         $hour=
-            Carbon::parse(
-                $slot
-            )->hour;
+            Carbon::parse($slot)->hour;
 
-        if(
-            $hour>=9 &&
-            $hour<=12
-        ){
+        if($hour>=9 && $hour<=12){
             return 0.9;
         }
 
-        if(
-            $hour<=15
-        ){
+        if($hour<=15){
             return 0.7;
         }
 
@@ -260,19 +170,11 @@ class RecommendationService
     /**
      * Weekday preference
      */
-    private function dayReliability(
-        $slot
-    )
+    private function dayReliability($slot)
     {
-        $day=
-            Carbon::parse(
-                $slot
-            )->dayOfWeek;
+        $day= Carbon::parse($slot)->dayOfWeek;
 
-        if(
-            $day>=1 &&
-            $day<=5
-        ){
+        if($day>=1 && $day<=5){
             return 0.9;
         }
 
@@ -284,29 +186,16 @@ class RecommendationService
     /**
      * Specialist load coefficient
      */
-    private function specialistLoad(
-        $specialistId,
-        $slot
-    )
+    private function specialistLoad($specialistId, $slot)
     {
         $count=
-            Appointment::where(
-                'specialist_id',
-                $specialistId
-            )
-
+            Appointment::where('specialist_id', $specialistId)
             ->whereDate(
-                'start_time',
-                Carbon::parse(
-                    $slot
-                )->toDateString()
+                'start_time', Carbon::parse($slot)
+                    ->toDateString()
             )
+             ->count();
 
-            ->count();
-
-        return max(
-            0,
-            1 - ($count/10)
-        );
+        return max(0, 1 - ($count/10));
     }
 }
