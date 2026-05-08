@@ -71,6 +71,9 @@ Route::middleware('auth:api')->group(function(){
 Route::middleware(['auth:api','role:ADMIN'])->group(function(){
     Route::get('/appointments',[AppointmentController::class,'index']);
 
+    Route::put('/services/{id}', [ServiceController::class, 'update']);
+    Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
+
     Route::post('/specialists', [SpecialistController::class, 'store']);
     Route::put('/specialists/{id}', [SpecialistController::class, 'update']);
     Route::delete('/specialists/{id}', [SpecialistController::class, 'destroy']);
@@ -81,8 +84,7 @@ Route::middleware(['auth:api','role:ADMIN'])->group(function(){
 Route::middleware(['auth:api','role:SPECIALIST'])->group(function(){
     Route::get('/my-services', [ServiceController::class,'myServices']);
     Route::post('/services', [ServiceController::class, 'store']);
-    Route::put('/services/{id}', [ServiceController::class, 'update']);
-    Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
+
     
     Route::put('/appointments/{id}/status', [AppointmentController::class, 'updateStatus']);
         

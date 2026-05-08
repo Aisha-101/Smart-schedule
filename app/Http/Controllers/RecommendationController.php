@@ -12,16 +12,22 @@ class RecommendationController extends Controller
         $request->validate([
             'specialist_id' => 'required|integer',
             'date' => 'required|date',
-            'service_id' => 'required|exists:services,id'
+            'service_id' => 'required|exists:services,id',
         ]);
 
-        $data = $service->getRecommendedTimes(
-            auth()->id(),
-            $request->specialist_id,
-            $request->date,
-            $request->service_id
-        );
+        if ($request->date < now()->toDateString()) {
+            return response()->json([
+                'message' => 'Cannot recommend times in the past.'
+            ], 422);
+        }
 
-        return response()->json($data);
+        return response()->json(
+            $service->getRecommendedTimes(
+                auth()->id(),
+                $request->specialist_id,
+                $request->date,
+                $request->service_id
+            )
+        );
     }
 }

@@ -8,7 +8,11 @@ class SpecialistAvailabilityController extends Controller
 {
     public function index($id)
     {
-        return SpecialistAvailability::where('specialist_id', $id)->get();
+        return SpecialistAvailability::where('specialist_id', $id)
+            ->whereDate('date', '>=', now()->toDateString())
+            ->orderBy('date')
+            ->orderBy('start_time')
+            ->get();
     }
     public function store(Request $request, $id)
     {

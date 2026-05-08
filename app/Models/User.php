@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Tymon\JWTAuth\Contracts\JWTSubject;
-
+use App\Models\Appointment;
 
 class User extends Authenticatable implements JWTSubject, MustVerifyEmail
 {
@@ -64,5 +64,10 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         return [
             'role' => $this->role, 
         ];
+    }
+
+    public function specialistAppointments()
+    {
+        return $this->hasMany(Appointment::class, 'specialist_id');
     }
 }
