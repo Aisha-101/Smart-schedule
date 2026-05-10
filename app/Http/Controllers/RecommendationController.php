@@ -10,9 +10,11 @@ class RecommendationController extends Controller
     public function get(Request $request, RecommendationService $service)
     {
         $request->validate([
-            'specialist_id' => 'required|integer',
+            'specialist_id' => 'required|integer|exists:users,id',
             'date' => 'required|date',
-            'service_id' => 'required|exists:services,id',
+            'service_id' => 'nullable|exists:services,id',
+            'service_ids' => 'nullable|array|min:1',
+            'service_ids.*' => 'exists:services,id',
         ]);
 
         if ($request->date < now()->toDateString()) {
@@ -21,12 +23,21 @@ class RecommendationController extends Controller
             ], 422);
         }
 
+        $serviceIdsInput = $request->input('service_ids', null);
+
+        if (is_array($serviceIdsInput) && ! empty($serviceIdsInput)) {
+            $serviceIds = $serviceIdsInput;
+        } elseif ($request->filled('service_id')) {
+            $serviceIds = [$request->input('service_id')];
+        } else {
+            $serviceIds = [];
+        }
         return response()->json(
             $service->getRecommendedTimes(
                 auth()->id(),
                 $request->specialist_id,
                 $request->date,
-                $request->service_id
+                $request->service_ids
             )
         );
     }

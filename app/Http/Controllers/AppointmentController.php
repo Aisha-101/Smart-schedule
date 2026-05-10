@@ -24,7 +24,17 @@ class AppointmentController extends Controller
 
         $clientId = auth()->id();
 
-       $overlap = Appointment::where('specialist_id', $request->specialist_id)
+        $serviceCount = \App\Models\Service::whereIn('id', $request->services)
+            ->where('specialist_id', $request->specialist_id)
+            ->count();
+
+        if ($serviceCount !== count(array_unique($request->services))) {
+            return response()->json([
+                'message' => 'All selected services must belong to the selected specialist'
+            ], 422);
+        }
+
+        $overlap = Appointment::where('specialist_id', $request->specialist_id)
             ->where('status', '!=', 'CANCELED')
             ->where(function ($query) use ($request){
                 $query->where('start_time', '<', $request->end_time)
@@ -47,7 +57,7 @@ class AppointmentController extends Controller
         ]);
         $appointment->services()->attach($request->services);
 
-        return $appointment->load('services');
+        return response()->json($appointment->load('services'), 201);
     }
 
     public function update(Request $request, $id)

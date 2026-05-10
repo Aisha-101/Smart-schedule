@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Service;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 class ServiceController extends Controller
@@ -68,5 +69,20 @@ class ServiceController extends Controller
         return Service::where(
                 'specialist_id', auth()->id()
             )->get();
+    }
+
+    public function bySpecialist($specialistId)
+    {
+        $specialist = User::where('id', $specialistId)
+            ->where('role', 'SPECIALIST')
+            ->first();
+
+        if (! $specialist) {
+            return response()->json([
+                'message' => 'Specialist not found',
+            ], 404);
+        }
+
+        return Service::where('specialist_id', $specialistId)->get();
     }
 }

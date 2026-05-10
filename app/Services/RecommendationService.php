@@ -3,58 +3,82 @@
 namespace App\Services;
 
 use App\Models\Appointment;
-use App\Models\SpecialistAvailability;
-use Carbon\Carbon;
 use App\Models\Service;
 use App\Models\Specialist;
+use App\Models\SpecialistAvailability;
+use Carbon\Carbon;
 
 class RecommendationService
 {
-    /**
-     * Main recommendation algorithm
-     */
-    public function getRecommendedTimes($clientId, $specialistId, $date, $serviceId)
-    {
-        $service = Service::find($serviceId);
-        $duration = $service->duration;
+    private const NEAREST_DAY_SEARCH_WINDOW = 30;
 
-        $slots = $this->availableSlots(
-            $specialistId,
-            $date,
-            $duration
-        );
+    public function getRecommendedTimes($clientId, $specialistId, $date, ?array $serviceIds = null)
+    {
+        $serviceIds = $serviceIds ?? [];
+
+        $services = Service::query()
+            ->whereIn('id', $serviceIds)
+            ->get();
+
+        if (!empty($serviceIds) && $services->count() !== count(array_unique($serviceIds))) {
+            return [
+                'message' => 'One or more selected services do not exist.',
+                'slots' => [],
+                'warnings' => [],
+                'alternative_day_slots' => [],
+            ];
+        }
+
+        if ($services->isNotEmpty() && $services->contains(fn ($service) => (int) $service->specialist_id !== (int) $specialistId)) {
+            return [
+                'message' => 'All selected services must belong to the selected specialist.',
+                'slots' => [],
+                'warnings' => [],
+                'alternative_day_slots' => [],
+            ];
+        }
+
+        $duration = $services->sum('duration');
+
+        if ($duration <= 0) {
+            $duration = 30;
+        }
+
+        $slots = $this->availableSlots($specialistId, $date, $duration);
+        $warnings = [];
+        $alternativeDay = [];
+
+        $dailyLoad = Appointment::where('specialist_id', $specialistId)
+            ->whereDate('start_time', $date)
+            ->where('status', '!=', 'CANCELED')
+            ->count();
+
+        if ($dailyLoad >= 8) {
+            $warnings[] = 'Selected specialist has high load on this day.';
+        }
+
+        if (empty($slots)) {
+            $warnings[] = 'No free slots found for selected day. Nearest available day is suggested.';
+
+            return [
+                'slots' => [],
+                'warnings' => $warnings,
+                'alternative_day_slots' => $this->findNearestAvailableDay($specialistId, $date, $duration),
+            ];
+        }
+
+        $specialistProfile = Specialist::where('user_id', $specialistId)->first();
+        $workloadFactor = $specialistProfile?->workload_factor ?? 1.0;
 
         $results = [];
 
-        $specialistProfile = Specialist::where('user_id', $specialistId)->first();
+        foreach ($slots as $slot) {
+            $clientScore = $this->clientReliability($clientId);
+            $timeScore = $this->timeReliability($slot['start']);
+            $dayScore = $this->dayReliability($slot['start']);
+            $loadScore = $this->specialistLoad($specialistId, $slot['start']);
+            $cancellationScore = $this->specialistCancellationRisk($specialistId, $slot['start']);
 
-        $workloadFactor = $specialistProfile?->workload_factor ?? 1.0;
-
-        foreach($slots as $slot){
-
-            $clientScore = $this->clientReliability(
-                $clientId
-            );
-
-            $timeScore = $this->timeReliability(
-                $slot['start']
-            );
-
-            $dayScore = $this->dayReliability(
-                $slot['start']
-            );
-
-            $loadScore = $this->specialistLoad(
-                $specialistId,
-                $slot['start']
-            );
-
-            $cancellationScore = $this->specialistCancellationRisk(
-                $specialistId,
-                $slot['start']
-            );
-
-            // Weighted scoring formula
             $score =
                 ($clientScore * 0.4) +
                 ($timeScore * 0.3) +
@@ -62,27 +86,17 @@ class RecommendationService
                 ($loadScore * 0.1) +
                 ($cancellationScore * 0.05);
 
-            $score = $score * $workloadFactor;
-
             $results[] = [
                 'start' => $slot['start'],
-                'end'   => $slot['end'],
-                'score' => round($score,2)
+                'end' => $slot['end'],
+                'score' => round($score * $workloadFactor, 2),
             ];
         }
 
-        usort($results, fn($a,$b)=> $b['score'] <=> $a['score']);
+        usort($results, fn ($a, $b) => $b['score'] <=> $a['score']);
 
-        $dailyLoad = Appointment::where('specialist_id', $specialistId)
-            ->whereDate('start_time', $date)
-            ->where('status', '!=', 'CANCELED')
-            ->count();
-
-        $warnings = [];
-        $alternativeDay = null;
         if ($dailyLoad >= 8) {
-            $warnings[] = 'Specialist is highly loaded on this day, consider alternative day.';
-            $alternativeDay = $this->findLessBusyDay($specialistId, $date, $duration);
+            $alternativeDay = $this->findNearestAvailableDay($specialistId, $date, $duration);
         }
 
         return [
@@ -92,40 +106,26 @@ class RecommendationService
         ];
     }
 
-
-    /**
-     * Generate only FREE specialist slots
-     */
     private function availableSlots($specialistId, $date, $duration)
     {
-        $availability=
-            SpecialistAvailability::where('specialist_id', $specialistId)
+        $availability = SpecialistAvailability::where('specialist_id', $specialistId)
             ->whereDate('date', $date)
             ->get();
 
-        $slots=[];
+        $slots = [];
 
-        foreach($availability as $window){
-
-            $start = Carbon::parse(
-                    $date.' '.$window->start_time
-                );
-
-            $end = Carbon::parse(
-                    $date.' '.$window->end_time
-                );
-
+        foreach ($availability as $window) {
+            $start = Carbon::parse($date . ' ' . $window->start_time);
+            $end = Carbon::parse($date . ' ' . $window->end_time);
 
             while ($start->copy()->addMinutes($duration) <= $end) {
-
                 $slotStart = $start->copy();
-
                 $slotEnd = $start->copy()->addMinutes($duration);
 
                 if (!$this->hasConflict($specialistId, $slotStart, $slotEnd)) {
                     $slots[] = [
                         'start' => $slotStart->toDateTimeString(),
-                        'end' => $slotEnd->toDateTimeString()
+                        'end' => $slotEnd->toDateTimeString(),
                     ];
                 }
 
@@ -136,10 +136,6 @@ class RecommendationService
         return $slots;
     }
 
-
-    /**
-     * Prevent appointment conflicts
-     */
     private function hasConflict($specialistId, $start, $end)
     {
         return Appointment::where('specialist_id', $specialistId)
@@ -151,82 +147,56 @@ class RecommendationService
             ->exists();
     }
 
-
-
-    /**
-     * Client reliability
-     */
     private function clientReliability($clientId)
     {
-        $appointments = Appointment::where('client_id', $clientId)
-                    ->get();
+        $appointments = Appointment::where('client_id', $clientId)->get();
 
-        if($appointments->count() == 0){
+        if ($appointments->count() === 0) {
             return 0.70;
         }
 
-        $noShows = $appointments
-                ->where('status', 'NO_SHOW')
-                ->count();
+        $noShows = $appointments->where('status', 'NO_SHOW')->count();
 
         return 1 - ($noShows / $appointments->count());
     }
 
-
-
-    /**
-     * Time preference score
-     */
     private function timeReliability($slot)
     {
-        $hour=
-            Carbon::parse($slot)->hour;
+        $hour = Carbon::parse($slot)->hour;
 
-        if($hour>=9 && $hour<=12){
+        if ($hour >= 9 && $hour <= 12) {
             return 0.9;
         }
 
-        if($hour<=15){
+        if ($hour <= 15) {
             return 0.7;
         }
 
         return 0.5;
     }
 
-
-
-    /**
-     * Weekday preference
-     */
     private function dayReliability($slot)
     {
-        $day= Carbon::parse($slot)->dayOfWeek;
+        $day = Carbon::parse($slot)->dayOfWeek;
 
-        if($day>=1 && $day<=5){
+        if ($day >= 1 && $day <= 5) {
             return 0.9;
         }
 
         return 0.6;
     }
 
-
-
-    /**
-     * Specialist load coefficient
-     */
     private function specialistLoad($specialistId, $slot)
     {
-        $count=
-            Appointment::where('specialist_id', $specialistId)
-            ->whereDate(
-                'start_time', Carbon::parse($slot)
-                    ->toDateString()
-            )
-             ->count();
+        $count = Appointment::where('specialist_id', $specialistId)
+            ->whereDate('start_time', Carbon::parse($slot)->toDateString())
+            ->where('status', '!=', 'CANCELED')
+            ->count();
 
-        return max(0, 1 - ($count/10));
+        return max(0, 1 - ($count / 10));
     }
-private function specialistCancellationRisk($specialistId, $slot)
+
+    private function specialistCancellationRisk($specialistId, $slot)
     {
         $hour = Carbon::parse($slot)->hour;
 
@@ -246,20 +216,32 @@ private function specialistCancellationRisk($specialistId, $slot)
         return max(0.2, 1 - ($cancelledAtHour / $totalAtHour));
     }
 
-    private function findLessBusyDay($specialistId, $date, $duration)
+    private function findNearestAvailableDay($specialistId, $date, $duration)
     {
-        for ($i = 1; $i <= 5; $i++) {
+        for ($i = 1; $i <= self::NEAREST_DAY_SEARCH_WINDOW; $i++) {
             $candidate = Carbon::parse($date)->addDays($i)->toDateString();
-            $count = Appointment::where('specialist_id', $specialistId)
-                ->whereDate('start_time', $candidate)
-                ->where('status', '!=', 'CANCELED')
-                ->count();
 
-            if ($count < 6) {
-                return $this->availableSlots($specialistId, $candidate, $duration);
+            $candidateSlots = $this->availableSlots($specialistId, $candidate, $duration);
+
+            if (!empty($candidateSlots)) {
+                $dayLoad = Appointment::where('specialist_id', $specialistId)
+                    ->whereDate('start_time', $candidate)
+                    ->where('status', '!=', 'CANCELED')
+                    ->count();
+
+                return [
+                    'date' => $candidate,
+                    'day_load' => $dayLoad,
+                    'slots' => $candidateSlots,
+                ];
             }
         }
 
-        return [];
+        return [
+            'date' => null,
+            'day_load' => null,
+            'slots' => [],
+            'message' => 'No availability found in the next ' . self::NEAREST_DAY_SEARCH_WINDOW . ' days.',
+        ];
     }
 }

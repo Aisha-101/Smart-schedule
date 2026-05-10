@@ -103,4 +103,5 @@ Route::middleware(['auth:api','role:CLIENT'])->group(function(){
     Route::delete('/appointments/{id}',[AppointmentController::class,'destroy']);
     Route::put('/appointments/{id}/confirm', [AppointmentController::class, 'confirm']);
     Route::post('/appointments/{id}/confirm-email', [AppointmentController::class, 'sendConfirmationEmail']);
+    Route::get('/specialists/{specialistId}/services',[ServiceController::class,'bySpecialist']);
 });
