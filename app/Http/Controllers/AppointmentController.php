@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 use App\Models\Appointment;
+use App\Notifications\AppointmentConfirmationNotification;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -204,7 +205,7 @@ class AppointmentController extends Controller
                 'message' => 'Only scheduled appointments can be confirmed',
             ], 422);
         }
-        
+
         $now = Carbon::now();
         $appointmentStart = Carbon::parse($appointment->start_time);
 
@@ -218,5 +219,54 @@ class AppointmentController extends Controller
             'message' =>'Appointment confirmed succesfully',
             'appointment' => $appointment,
         ]);
+    }
+
+    public function sendConfirmationEmail($id)
+    {
+        $appointment = Appointment::with('client')->findOrFail($id);
+        $user = auth()->user();
+
+        if ($user->role !== 'CLIENT' || (int) $appointment->client_id !== (int) $user->id) {
+            return response()->json([
+                'message' => 'You can request confirmation only for your own appointments',
+            ], 403);
+        }
+
+        if ($appointment->status !== 'SCHEDULED') {
+            return response()->json([
+                'message' => 'Only scheduled appointments can be confirmed',
+            ], 422);
+        }
+
+        $hash = sha1($appointment->id.'|'.$appointment->client->email.'|'.$appointment->start_time);
+        $url = url('/api/appointments/'.$appointment->id.'/confirm-email/'.$hash);
+
+        $appointment->client->notify(new AppointmentConfirmationNotification($appointment, $url));
+
+        return response()->json([
+            'message' => 'Confirmation email sent successfully',
+        ]);
+    }
+
+    public function confirmByEmail($id, $hash)
+    {
+        $appointment = Appointment::with('client')->findOrFail($id);
+        $expectedHash = sha1($appointment->id.'|'.$appointment->client->email.'|'.$appointment->start_time);
+        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+
+        if (! hash_equals($expectedHash, $hash)) {
+            return redirect()->away($frontendUrl.'/my-appointments?confirm=error&reason=invalid_link');
+        }
+
+        $now = Carbon::now();
+        $appointmentStart = Carbon::parse($appointment->start_time);
+
+        if (! $now->isSameDay($appointmentStart->copy()->subDay())) {
+            return redirect()->away($frontendUrl.'/my-appointments?confirm=error&reason=wrong_day');
+        }
+
+        $appointment->update(['status' => 'CONFIRMED']);
+
+        return redirect()->away($frontendUrl.'/my-appointments?confirm=success&appointment_id='.$appointment->id);
     }
 }

@@ -45,6 +45,8 @@ Route::post('/email/resend', function (Request $request) {
 
 Route::post('/login',[AuthController::class,'login']);
 
+Route::get('/appointments/{id}/confirm-email/{hash}', [AppointmentController::class, 'confirmByEmail']);
+
 Route::post('/forgot-password',[AuthController::class,'forgotPassword']);
 Route::get('/reset-password/{token}', function ($token) {
     return response()->json([
@@ -100,4 +102,5 @@ Route::middleware(['auth:api','role:CLIENT'])->group(function(){
     Route::put('/appointments/{id}',[AppointmentController::class,'update']);
     Route::delete('/appointments/{id}',[AppointmentController::class,'destroy']);
     Route::put('/appointments/{id}/confirm', [AppointmentController::class, 'confirm']);
+    Route::post('/appointments/{id}/confirm-email', [AppointmentController::class, 'sendConfirmationEmail']);
 });
