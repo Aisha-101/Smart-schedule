@@ -26,6 +26,10 @@ class RecommendationService
 
         $results = [];
 
+        $specialistProfile = Specialist::where('user_id', $specialistId)->first();
+
+        $workloadFactor = $specialistProfile?->workload_factor ?? 1.0;
+
         foreach($slots as $slot){
 
             $clientScore = $this->clientReliability(
@@ -45,12 +49,20 @@ class RecommendationService
                 $slot['start']
             );
 
+            $cancellationScore = $this->specialistCancellationRisk(
+                $specialistId,
+                $slot['start']
+            );
+
             // Weighted scoring formula
             $score =
                 ($clientScore * 0.4) +
                 ($timeScore * 0.3) +
-                ($dayScore * 0.2) +
-                ($loadScore * 0.1);
+                ($dayScore * 0.15) +
+                ($loadScore * 0.1) +
+                ($cancellationScore * 0.05);
+
+            $score = $score * $workloadFactor;
 
             $results[] = [
                 'start' => $slot['start'],
@@ -61,7 +73,23 @@ class RecommendationService
 
         usort($results, fn($a,$b)=> $b['score'] <=> $a['score']);
 
-        return $results;
+        $dailyLoad = Appointment::where('specialist_id', $specialistId)
+            ->whereDate('start_time', $date)
+            ->where('status', '!=', 'CANCELED')
+            ->count();
+
+        $warnings = [];
+        $alternativeDay = null;
+        if ($dailyLoad >= 8) {
+            $warnings[] = 'Specialist is highly loaded on this day, consider alternative day.';
+            $alternativeDay = $this->findLessBusyDay($specialistId, $date, $duration);
+        }
+
+        return [
+            'slots' => $results,
+            'warnings' => $warnings,
+            'alternative_day_slots' => $alternativeDay,
+        ];
     }
 
 
@@ -197,5 +225,41 @@ class RecommendationService
              ->count();
 
         return max(0, 1 - ($count/10));
+    }
+private function specialistCancellationRisk($specialistId, $slot)
+    {
+        $hour = Carbon::parse($slot)->hour;
+
+        $cancelledAtHour = Appointment::where('specialist_id', $specialistId)
+            ->where('status', 'CANCELED')
+            ->whereRaw('HOUR(start_time) = ?', [$hour])
+            ->count();
+
+        $totalAtHour = Appointment::where('specialist_id', $specialistId)
+            ->whereRaw('HOUR(start_time) = ?', [$hour])
+            ->count();
+
+        if ($totalAtHour === 0) {
+            return 0.9;
+        }
+
+        return max(0.2, 1 - ($cancelledAtHour / $totalAtHour));
+    }
+
+    private function findLessBusyDay($specialistId, $date, $duration)
+    {
+        for ($i = 1; $i <= 5; $i++) {
+            $candidate = Carbon::parse($date)->addDays($i)->toDateString();
+            $count = Appointment::where('specialist_id', $specialistId)
+                ->whereDate('start_time', $candidate)
+                ->where('status', '!=', 'CANCELED')
+                ->count();
+
+            if ($count < 6) {
+                return $this->availableSlots($specialistId, $candidate, $duration);
+            }
+        }
+
+        return [];
     }
 }

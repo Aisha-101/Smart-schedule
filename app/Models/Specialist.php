@@ -8,7 +8,8 @@ class Specialist extends Model
 {
     protected $fillable = [
         'user_id',
-        'specialization'
+        'specialization',
+        'workload_factor',
     ];
 
     public function user()

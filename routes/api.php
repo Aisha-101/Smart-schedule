@@ -60,6 +60,7 @@ Route::get('/specialists',[SpecialistController::class,'index']);
 // PROTECTED
 Route::middleware('auth:api')->group(function(){
 
+    Route::post('/logout',[AuthController::class, 'logout']);
     Route::get('/appointments',[AppointmentController::class,'index']);
     Route::get('/appointments/my',[AppointmentController::class,'my']);
     
@@ -73,7 +74,7 @@ Route::middleware(['auth:api','role:ADMIN'])->group(function(){
 
     Route::put('/services/{id}', [ServiceController::class, 'update']);
     Route::delete('/services/{id}', [ServiceController::class, 'destroy']);
-
+    Route::post('/specialists/sync-from-users', [SpecialistController::class, 'syncFromUsers']);
     Route::post('/specialists', [SpecialistController::class, 'store']);
     Route::put('/specialists/{id}', [SpecialistController::class, 'update']);
     Route::delete('/specialists/{id}', [SpecialistController::class, 'destroy']);
@@ -98,4 +99,5 @@ Route::middleware(['auth:api','role:CLIENT'])->group(function(){
     Route::post('/appointments',[AppointmentController::class,'store']);
     Route::put('/appointments/{id}',[AppointmentController::class,'update']);
     Route::delete('/appointments/{id}',[AppointmentController::class,'destroy']);
+    Route::put('/appointments/{id}/confirm', [AppointmentController::class, 'confirm']);
 });

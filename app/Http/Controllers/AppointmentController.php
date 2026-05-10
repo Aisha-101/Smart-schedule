@@ -56,7 +56,7 @@ class AppointmentController extends Controller
         $request->validate([
             'start_time' => 'sometimes|required|date',
             'end_time' => 'sometimes|required|date|after:start_time',
-            'status' => 'sometimes|required|in:SCHEDULED,COMPLETED,CANCELED,NO_SHOW,LATE',
+            'status' => 'sometimes|required|in:SCHEDULED, CONFIRMED, COMPLETED,CANCELED,NO_SHOW,LATE',
             'services' => 'sometimes|array',
             'services.*' => 'exists:services,id'
         ]);
@@ -162,7 +162,7 @@ class AppointmentController extends Controller
     public function updateStatus(Request $request, $id)
     {
         $request->validate([
-            'status' => 'required|in:SCHEDULED,COMPLETED,CANCELED,NO_SHOW,LATE',
+            'status' => 'required|in:SCHEDULED, CONFIRMED, COMPLETED,CANCELED,NO_SHOW,LATE',
             'delay_minutes' => 'nullable|integer|min:0',
         ]);
 
@@ -185,6 +185,38 @@ class AppointmentController extends Controller
         return response()->json([
             'message' => 'Appointment status updated successfully',
             'appointment' => $appointment->load(['client', 'services'])
+        ]);
+    }
+
+    public function confirm($id)
+    {
+        $appointment = Appointment::finOrFail($id);
+        $user = auth()->user();
+
+        if ($user->role !== 'CLIENT' || (int) $appointment->client_id !== (int) $user->id) {
+            return response()->json([
+                'message' => 'You can confirm only your own appointments',
+            ], 403);
+        }
+
+        if ($appointment->status !== 'SCHEDULED') {
+            return response()->json([
+                'message' => 'Only scheduled appointments can be confirmed',
+            ], 422);
+        }
+        
+        $now = Carbon::now();
+        $appointmentStart = Carbon::parse($appointment->start_time);
+
+        if(! $now->isSameDay($appointmentStart->copy()->subDay())) {
+            return response()->json(['message' => 'Appointment can only be confirmed exactly one day before the reservation'], 422);
+        }
+
+        $appointment->update(['status' => 'CONFIRMED']);
+
+        return response()->json([
+            'message' =>'Appointment confirmed succesfully',
+            'appointment' => $appointment,
         ]);
     }
 }
