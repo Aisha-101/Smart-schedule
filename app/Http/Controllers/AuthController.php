@@ -46,7 +46,7 @@ class AuthController extends Controller
 
        return response()->json([
            'token'=>$token,
-           'user'=>auth('api')->user()
+           'user'=>auth('api')->user()->load('specialist'),
        ]);
     }
     public function forgotPassword(Request $request)
@@ -96,6 +96,35 @@ class AuthController extends Controller
         return response()->json([
             'message'=> _($status)], 400);
         
+    }
+
+    public function updateProfile(Request $request)
+    {
+        $user = auth('api')->user();
+
+        $validated = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'email' => 'sometimes|required|email|unique:users,email,' . $user->id,
+            'password' => 'sometimes|required|string|min:8|confirmed',
+        ]);
+
+        if (isset($validated['password'])) {
+            $validated['password'] = Hash::make($validated['password']);
+        }
+
+       $user->update(collect($validated)->except('specialization')->toArray());
+
+        if ($user->role === 'SPECIALIST' && $request->filled('specialization')) {
+            $user->specialist()->updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'specialization' => $request->specialization,
+                    'workload_factor' => 1.00,
+                ]
+            );
+        }
+
+        return response()->json($user->fresh()->load('specialist'), 200);
     }
 
     public function logout()

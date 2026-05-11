@@ -11,6 +11,7 @@ class SpecialistController extends Controller
     public function index()
     {
         return User::where('role', 'SPECIALIST')
+            ->with(['specialist:id,user_id,specialization,workload_factor'])
             ->select('id', 'name', 'email', 'role')
             ->get();
     }
@@ -53,4 +54,25 @@ class SpecialistController extends Controller
         return $specialist->services;
     }
     
+     public function update(Request $request, $id)
+    {
+        $specialist = Specialist::findOrFail($id);
+
+        $request->validate([
+            'specialization' => 'sometimes|required|string',
+            'workload_factor' => 'sometimes|required|numeric|min:0.1|max:3'
+        ]);
+
+        $specialist->update($request->only(['specialization', 'workload_factor']));
+
+        return response()->json($specialist->fresh(), 200);
+    }
+
+    public function destroy($id)
+    {
+        $specialist = Specialist::findOrFail($id);
+        $specialist->delete();
+
+        return response()->json(['message' => 'Specialist deleted successfully']);
+    }
 }

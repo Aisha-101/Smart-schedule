@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\AdminUserController;
+
 
 // PUBLIC
 Route::post('/register',[AuthController::class,'register']);
@@ -66,7 +68,8 @@ Route::middleware('auth:api')->group(function(){
     Route::get('/appointments',[AppointmentController::class,'index']);
     Route::get('/appointments/my',[AppointmentController::class,'my']);
     
-    
+    Route::put('/me', [AuthController::class, 'updateProfile']);
+
     Route::get('/recommendations',[RecommendationController::class,'get']);
 
 });
@@ -82,6 +85,12 @@ Route::middleware(['auth:api','role:ADMIN'])->group(function(){
     Route::delete('/specialists/{id}', [SpecialistController::class, 'destroy']);
 
     Route::get('/statistics', [StatisticsController::class, 'index']);
+
+    Route::get('/admin/users', [AdminUserController::class, 'index']);
+    Route::post('/admin/users', [AdminUserController::class, 'store']);
+    Route::get('/admin/users/{id}', [AdminUserController::class, 'show']);
+    Route::put('/admin/users/{id}', [AdminUserController::class, 'update']);
+    Route::delete('/admin/users/{id}', [AdminUserController::class, 'destroy']);
 });
 
 Route::middleware(['auth:api','role:SPECIALIST'])->group(function(){

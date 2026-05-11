@@ -9,17 +9,20 @@ class HandleCors
 {
     public function handle(Request $request, Closure $next)
     {
-        $response = $next($request);
-
-        $response->header('Access-Control-Allow-Origin', 'localhost:5173');
-        $response->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        $response->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        $response->header('Access-Control-Allow-Credentials', 'true');
-
         if ($request->getMethod() === "OPTIONS") {
-            return response()->json([], 200);
+            return response()->json([], 200)
+                ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+                ->header('Access-Control-Allow-Credentials', 'true');
         }
 
-        return $response;
+        $response = $next($request);
+
+        return $response
+            ->header('Access-Control-Allow-Origin', 'http://localhost:5173')
+            ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+            ->header('Access-Control-Allow-Credentials', 'true');
     }
 }
