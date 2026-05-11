@@ -63,40 +63,14 @@ class RecommendationService
             return [
                 'slots' => [],
                 'warnings' => $warnings,
-                'alternative_day_slots' => $this->findNearestAvailableDay($specialistId, $date, $duration),
+                'alternative_day_slots' => $this->findNearestAvailableDay($clientId, $specialistId, $date, $duration),
             ];
         }
 
-        $specialistProfile = Specialist::where('user_id', $specialistId)->first();
-        $workloadFactor = $specialistProfile?->workload_factor ?? 1.0;
-
-        $results = [];
-
-        foreach ($slots as $slot) {
-            $clientScore = $this->clientReliability($clientId);
-            $timeScore = $this->timeReliability($slot['start']);
-            $dayScore = $this->dayReliability($slot['start']);
-            $loadScore = $this->specialistLoad($specialistId, $slot['start']);
-            $cancellationScore = $this->specialistCancellationRisk($specialistId, $slot['start']);
-
-            $score =
-                ($clientScore * 0.4) +
-                ($timeScore * 0.3) +
-                ($dayScore * 0.15) +
-                ($loadScore * 0.1) +
-                ($cancellationScore * 0.05);
-
-            $results[] = [
-                'start' => $slot['start'],
-                'end' => $slot['end'],
-                'score' => round($score * $workloadFactor, 2),
-            ];
-        }
-
-        usort($results, fn ($a, $b) => $b['score'] <=> $a['score']);
+        $results = $this->scoreSlots($slots, $clientId, $specialistId);
 
         if ($dailyLoad >= 8) {
-            $alternativeDay = $this->findNearestAvailableDay($specialistId, $date, $duration);
+            $alternativeDay = $this->findNearestAvailableDay($clientId, $specialistId, $date, $duration);
         }
 
         return [
@@ -216,7 +190,7 @@ class RecommendationService
         return max(0.2, 1 - ($cancelledAtHour / $totalAtHour));
     }
 
-    private function findNearestAvailableDay($specialistId, $date, $duration)
+    private function findNearestAvailableDay($clientId, $specialistId, $date, $duration)
     {
         for ($i = 1; $i <= self::NEAREST_DAY_SEARCH_WINDOW; $i++) {
             $candidate = Carbon::parse($date)->addDays($i)->toDateString();
@@ -232,7 +206,7 @@ class RecommendationService
                 return [
                     'date' => $candidate,
                     'day_load' => $dayLoad,
-                    'slots' => $candidateSlots,
+                    'slots' => $this->scoreSlots($candidateSlots, $clientId, $specialistId),
                 ];
             }
         }
@@ -243,5 +217,38 @@ class RecommendationService
             'slots' => [],
             'message' => 'No availability found in the next ' . self::NEAREST_DAY_SEARCH_WINDOW . ' days.',
         ];
+    }
+
+    private function scoreSlots($slots, $clientId, $specialistId)
+    {
+        $specialistProfile = Specialist::where('user_id', $specialistId)->first();
+        $workloadFactor = $specialistProfile?->workload_factor ?? 1.0;
+
+        $results = [];
+
+        foreach ($slots as $slot) {
+            $clientScore = $this->clientReliability($clientId);
+            $timeScore = $this->timeReliability($slot['start']);
+            $dayScore = $this->dayReliability($slot['start']);
+            $loadScore = $this->specialistLoad($specialistId, $slot['start']);
+            $cancellationScore = $this->specialistCancellationRisk($specialistId, $slot['start']);
+
+            $score =
+                ($clientScore * 0.4) +
+                ($timeScore * 0.3) +
+                ($dayScore * 0.15) +
+                ($loadScore * 0.1) +
+                ($cancellationScore * 0.05);
+
+            $results[] = [
+                'start' => $slot['start'],
+                'end' => $slot['end'],
+                'score' => round($score * $workloadFactor, 2),
+            ];
+        }
+
+        usort($results, fn ($a, $b) => $b['score'] <=> $a['score']);
+
+        return $results;
     }
 }
